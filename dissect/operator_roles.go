@@ -45,7 +45,7 @@ var _operatorRoles = map[Operator]TeamRole{
 	395943091136: Attack,
 	409899350403: Defense,
 	409899350463: Attack,
-	4443106093746: Attack,
+	444310693746: Attack,
 	92270641980:  Defense,
 	92270642032:  Attack,
 	92270642084:  Attack,
