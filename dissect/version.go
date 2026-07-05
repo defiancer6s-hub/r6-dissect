@@ -25,4 +25,8 @@ const (
 	Y10S2_5     int = 9158643
 	Y10S3       int = 9199003
 	Y10S3_1     int = 9211553
+	Y11S1A3     int = 9679781
+	// Y11S2 alpha changed the in-record field fingerprints for the player
+	// DissectID and uiID (see readPlayer).
+	Y11S2 int = 9734089
 )

@@ -87,7 +87,12 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 		winningTeamIndex = 1
 	}
 	for i, p := range r.Header.Players {
-		scorePlayer := r.Scoreboard.Players[i]
+		// The scoreboard can be shorter than the player list when a replay
+		// is only partially parsed (e.g. unknown format) — don't panic.
+		var scorePlayer ScoreboardPlayer
+		if i < len(r.Scoreboard.Players) {
+			scorePlayer = r.Scoreboard.Players[i]
+		}
 		stats = append(stats, PlayerRoundStats{
 			Username:  p.Username,
 			TeamIndex: p.TeamIndex,
