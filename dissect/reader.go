@@ -24,6 +24,8 @@ type Reader struct {
 	listeners                [][]func(r *Reader) error
 	time                     float64 // in seconds
 	timeRaw                  string  // raw dissect format
+	roundDuration            float64 // action-phase length (max clock observed)
+	plantElapsed             float64 // RoundElapsed at the moment of plant
 	lastDefuserPlayerIndex   int
 	planted                  bool
 	readPartial              bool // reads up to the player info packets
@@ -255,6 +257,20 @@ func (r *Reader) Listen(pattern []byte, callback func(r *Reader) error) {
 	}
 	r.queries = append(r.queries, pattern)
 	r.listeners = append(r.listeners, []func(reader *Reader) error{callback})
+}
+
+// RoundElapsed returns seconds since the action phase began. Unlike the
+// broadcast clock (which counts down and jumps to the 45s defuser timer on
+// plant), this is monotonic across the whole round, so event deltas — trade
+// windows, plant timing — are safe to compute from it.
+func (r *Reader) RoundElapsed() float64 {
+	if r.planted {
+		return r.plantElapsed + (45 - r.time)
+	}
+	if r.roundDuration == 0 {
+		return 0
+	}
+	return r.roundDuration - r.time
 }
 
 // Seek skips through the replay until the pattern is found.

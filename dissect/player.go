@@ -202,6 +202,7 @@ func readAtkOpSwap(r *Reader) error {
 				Username:      r.Header.Players[i].Username,
 				Time:          r.timeRaw,
 				TimeInSeconds: r.time,
+				TimeElapsed:   r.RoundElapsed(),
 				Operator:      o,
 			}
 			r.MatchFeedback = append(r.MatchFeedback, u)
@@ -226,6 +227,7 @@ func readAtkOpSwap(r *Reader) error {
 				Username:      p.Username,
 				Time:          r.timeRaw,
 				TimeInSeconds: r.time,
+				TimeElapsed:   r.RoundElapsed(),
 				Operator:      o,
 			}
 			r.MatchFeedback = append(r.MatchFeedback, u)

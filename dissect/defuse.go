@@ -29,6 +29,7 @@ func readDefuserTimer(r *Reader) error {
 			Username:      r.Header.Players[i].Username,
 			Time:          r.timeRaw,
 			TimeInSeconds: r.time,
+			TimeElapsed:   r.RoundElapsed(),
 		}
 		r.MatchFeedback = append(r.MatchFeedback, u)
 		log.Debug().Interface("match_update", u).Send()
@@ -39,15 +40,20 @@ func readDefuserTimer(r *Reader) error {
 		return nil
 	}
 	a = DefuserDisableComplete
+	elapsed := r.RoundElapsed()
 	if !r.planted {
 		a = DefuserPlantComplete
+		// Record the plant moment BEFORE flipping planted so this event's
+		// own elapsed time is computed on the action-clock scale.
 		r.planted = true
+		r.plantElapsed = elapsed
 	}
 	u := MatchUpdate{
 		Type:          a,
 		Username:      r.Header.Players[r.lastDefuserPlayerIndex].Username,
 		Time:          r.timeRaw,
 		TimeInSeconds: r.time,
+		TimeElapsed:   elapsed,
 	}
 	r.MatchFeedback = append(r.MatchFeedback, u)
 	log.Debug().Interface("match_update", u).Send()

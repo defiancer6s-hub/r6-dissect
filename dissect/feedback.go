@@ -27,14 +27,22 @@ const (
 )
 
 type MatchUpdate struct {
-	Type                   MatchUpdateType `json:"type"`
-	Username               string          `json:"username,omitempty"`
-	Target                 string          `json:"target,omitempty"`
-	Headshot               *bool           `json:"headshot,omitempty"`
-	Time                   string          `json:"time"`
-	TimeInSeconds          float64         `json:"timeInSeconds"`
-	Message                string          `json:"message,omitempty"`
-	Operator               Operator        `json:"operator,omitempty"`
+	Type     MatchUpdateType `json:"type"`
+	Username string          `json:"username,omitempty"`
+	Target   string          `json:"target,omitempty"`
+	Headshot *bool           `json:"headshot,omitempty"`
+	Time     string          `json:"time"`
+	// TimeInSeconds is the broadcast clock: it counts DOWN and jumps to the
+	// 45s defuser timer on plant. Use TimeElapsed for event deltas.
+	TimeInSeconds float64 `json:"timeInSeconds"`
+	// TimeElapsed is seconds since the action phase began — monotonic across
+	// the plant, safe for trade windows and plant timing.
+	TimeElapsed float64 `json:"timeElapsed"`
+	// Traded is set on Kill events: true when the killer died within
+	// TradeWindowSeconds of this kill.
+	Traded                 *bool    `json:"traded,omitempty"`
+	Message                string   `json:"message,omitempty"`
+	Operator               Operator `json:"operator,omitempty"`
 	usernameFromScoreboard string
 }
 
@@ -119,6 +127,7 @@ func readMatchFeedback(r *Reader) error {
 				Username:      target,
 				Time:          r.timeRaw,
 				TimeInSeconds: r.time,
+				TimeElapsed:   r.RoundElapsed(),
 			}
 			r.MatchFeedback = append(r.MatchFeedback, u)
 			log.Debug().Interface("match_update", u).Send()
@@ -133,6 +142,7 @@ func readMatchFeedback(r *Reader) error {
 			Target:        target,
 			Time:          r.timeRaw,
 			TimeInSeconds: r.time,
+			TimeElapsed:   r.RoundElapsed(),
 		}
 		if err = r.Skip(56); err != nil {
 			return err
@@ -191,6 +201,7 @@ func readMatchFeedback(r *Reader) error {
 		Target:        "",
 		Time:          r.timeRaw,
 		TimeInSeconds: r.time,
+		TimeElapsed:   r.RoundElapsed(),
 		Message:       msg,
 	}
 	r.MatchFeedback = append(r.MatchFeedback, u)

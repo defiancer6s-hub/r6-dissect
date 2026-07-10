@@ -1,5 +1,11 @@
 package dissect
 
+// TradeWindowSeconds: a death is "traded" when the killer dies within this
+// window of the kill. Deltas are computed on MatchUpdate.TimeElapsed (the
+// monotonic round clock). Note the broadcast clock only has one-second
+// resolution, so 3.5 effectively means "within 3 seconds, inclusive".
+const TradeWindowSeconds = 3.5
+
 type PlayerRoundStats struct {
 	Username           string  `json:"username"`
 	TeamIndex          int     `json:"-"`
@@ -11,6 +17,12 @@ type PlayerRoundStats struct {
 	Headshots          int     `json:"headshots"`
 	HeadshotPercentage float64 `json:"headshotPercentage"`
 	OneVx              int     `json:"1vX,omitempty"`
+	// Trades: kills this player made on an enemy within TradeWindowSeconds
+	// of that enemy killing a teammate.
+	Trades int `json:"trades"`
+	// TradedDeaths: this player's deaths that a teammate avenged within
+	// TradeWindowSeconds.
+	TradedDeaths int `json:"tradedDeaths"`
 }
 
 type PlayerMatchStats struct {
@@ -22,6 +34,8 @@ type PlayerMatchStats struct {
 	Assists            int     `json:"assists"`
 	Headshots          int     `json:"headshots"`
 	HeadshotPercentage float64 `json:"headshotPercentage"`
+	Trades             int     `json:"trades"`
+	TradedDeaths       int     `json:"tradedDeaths"`
 }
 
 // OpeningKill returns the first player to kill.
@@ -44,17 +58,55 @@ func (r *Reader) OpeningDeath() MatchUpdate {
 	return MatchUpdate{}
 }
 
-// Trades returns KILL Activity pairs of trades.
+// tradePairs returns every (original kill, avenging kill) pair: the second
+// kill's victim is the first kill's killer, within TradeWindowSeconds on the
+// monotonic clock. Not limited to adjacent feedback entries.
+func (r *Reader) tradePairs() [][2]int {
+	pairs := make([][2]int, 0)
+	for i, a := range r.MatchFeedback {
+		if a.Type != Kill {
+			continue
+		}
+		for j := i + 1; j < len(r.MatchFeedback); j++ {
+			b := r.MatchFeedback[j]
+			if b.Type != Kill {
+				continue
+			}
+			delta := b.TimeElapsed - a.TimeElapsed
+			if delta > TradeWindowSeconds {
+				break
+			}
+			if delta >= 0 && b.Target == a.Username {
+				pairs = append(pairs, [2]int{i, j})
+				break
+			}
+		}
+	}
+	return pairs
+}
+
+// markTrades stamps Traded on every Kill event. Runs once per round after
+// the full feedback timeline is known.
+func (r *Reader) markTrades() {
+	traded := make(map[int]bool)
+	for _, p := range r.tradePairs() {
+		traded[p[0]] = true
+	}
+	for i := range r.MatchFeedback {
+		if r.MatchFeedback[i].Type != Kill {
+			continue
+		}
+		t := new(bool)
+		*t = traded[i]
+		r.MatchFeedback[i].Traded = t
+	}
+}
+
+// Trades returns KILL Activity pairs of trades within TradeWindowSeconds.
 func (r *Reader) Trades() [][]MatchUpdate {
 	trades := make([][]MatchUpdate, 0)
-	var previous = MatchUpdate{}
-	for _, a := range r.MatchFeedback {
-		var samePlayers = (previous.Target == a.Username || previous.Username == a.Target)
-		var withinThreshold = (previous.TimeInSeconds - a.TimeInSeconds) <= 3
-		if a.Type == Kill && samePlayers && withinThreshold {
-			trades = append(trades, []MatchUpdate{previous, a})
-		}
-		previous = a
+	for _, p := range r.tradePairs() {
+		trades = append(trades, []MatchUpdate{r.MatchFeedback[p[0]], r.MatchFeedback[p[1]]})
 	}
 	return trades
 }
@@ -116,6 +168,18 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 		} else if a.Type == Death {
 			stats[i].Died = true
 			lastDeath = i
+		}
+	}
+	// Trade attribution: the avenger gets a trade, the avenged victim gets
+	// a traded death.
+	for _, p := range r.tradePairs() {
+		orig := r.MatchFeedback[p[0]]
+		avenge := r.MatchFeedback[p[1]]
+		if i, ok := index[avenge.Username]; ok {
+			stats[i].Trades++
+		}
+		if i, ok := index[orig.Target]; ok {
+			stats[i].TradedDeaths++
 		}
 	}
 	// Calculates 1vX
@@ -189,6 +253,8 @@ func (m *MatchReader) PlayerStats() []PlayerMatchStats {
 			stats[i].Assists += p.Assists
 			stats[i].Headshots += p.Headshots
 			stats[i].HeadshotPercentage = headshotPercentage(stats[i].Headshots, stats[i].Kills)
+			stats[i].Trades += p.Trades
+			stats[i].TradedDeaths += p.TradedDeaths
 		}
 	}
 	return stats

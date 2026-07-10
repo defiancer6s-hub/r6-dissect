@@ -14,6 +14,11 @@ func readTime(r *Reader) error {
 		return err
 	}
 	r.time = float64(time)
+	// Track the action-phase length: the highest clock value seen. The prep
+	// countdown (45s) and post-plant defuser timer (45s) never exceed it.
+	if r.time > r.roundDuration {
+		r.roundDuration = r.time
+	}
 	r.timeRaw = fmt.Sprintf("%d:%02d", time/60, time%60)
 	return nil
 }
@@ -45,8 +50,10 @@ func readY7Time(r *Reader) error {
 
 func (r *Reader) roundEnd() {
 	log.Debug().Msg("round_end")
+	r.markTrades()
 
 	planter := -1
+	disabler := -1
 	deaths := make(map[int]int)
 	sizes := make(map[int]int)
 	roles := make(map[int]TeamRole)
@@ -54,12 +61,6 @@ func (r *Reader) roundEnd() {
 	for _, p := range r.Header.Players {
 		sizes[p.TeamIndex] += 1
 		roles[p.TeamIndex] = r.Header.Teams[p.TeamIndex].Role
-	}
-
-	if r.Header.CodeVersion >= Y9S4 {
-		team0Won := r.Header.Teams[0].StartingScore < r.Header.Teams[0].Score
-		r.Header.Teams[0].Won = team0Won
-		r.Header.Teams[1].Won = !team0Won
 	}
 
 	for _, u := range r.MatchFeedback {
@@ -71,20 +72,54 @@ func (r *Reader) roundEnd() {
 			if len(u.usernameFromScoreboard) > 0 {
 				u.Username = u.usernameFromScoreboard
 			}
-			break
 		case Death:
 			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
 			deaths[i] = deaths[i] + 1
-			break
 		case DefuserPlantComplete:
 			planter = r.PlayerIndexByUsername(u.Username)
-			break
 		case DefuserDisableComplete:
-			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
-			r.Header.Teams[i].Won = true
-			r.Header.Teams[i].WinCondition = DisabledDefuser
-			return
+			disabler = r.PlayerIndexByUsername(u.Username)
 		}
+	}
+
+	// Y9S4+: StartingScore vs Score is the authoritative winner. Never let
+	// objective events override it — a plant does not mean the planter's
+	// team won (post-plant losses exist), and trusting it produced rounds
+	// where BOTH teams had won=true. Objective events only pick the
+	// win condition for the score-derived winner.
+	if r.Header.CodeVersion >= Y9S4 {
+		team0Won := r.Header.Teams[0].StartingScore < r.Header.Teams[0].Score
+		r.Header.Teams[0].Won = team0Won
+		r.Header.Teams[1].Won = !team0Won
+		w := 1
+		if team0Won {
+			w = 0
+		}
+		loser := 1 - w
+		switch {
+		case disabler > -1 && r.Header.Players[disabler].TeamIndex == w:
+			r.Header.Teams[w].WinCondition = DisabledDefuser
+		case planter > -1 && r.Header.Players[planter].TeamIndex == w:
+			if deaths[loser] == sizes[loser] {
+				r.Header.Teams[w].WinCondition = KilledOpponents
+			} else {
+				r.Header.Teams[w].WinCondition = DefusedBomb
+			}
+		case deaths[loser] == sizes[loser]:
+			r.Header.Teams[w].WinCondition = KilledOpponents
+		default:
+			r.Header.Teams[w].WinCondition = Time
+		}
+		return
+	}
+
+	// Legacy (<Y9S4): no score truth available — keep the original
+	// event-driven inference.
+	if disabler > -1 {
+		i := r.Header.Players[disabler].TeamIndex
+		r.Header.Teams[i].Won = true
+		r.Header.Teams[i].WinCondition = DisabledDefuser
+		return
 	}
 
 	if planter > -1 {
@@ -93,24 +128,12 @@ func (r *Reader) roundEnd() {
 		return
 	}
 
-	// skip for now until we have a more reliable way of determining the win condition
-	// Y9S4 at least tells us who won now in the header with StartingScore
-	if r.Header.CodeVersion >= Y9S4 {
-		return
-	}
-
 	if deaths[0] == sizes[0] {
-		if planter > -1 && roles[0] == Attack { // ignore attackers killed post-plant
-			return
-		}
 		r.Header.Teams[1].Won = true
 		r.Header.Teams[1].WinCondition = KilledOpponents
 		return
 	}
 	if deaths[1] == sizes[1] {
-		if planter > -1 && roles[1] == Attack { // ignore attackers killed post-plant
-			return
-		}
 		r.Header.Teams[0].Won = true
 		r.Header.Teams[0].WinCondition = KilledOpponents
 		return
