@@ -76,12 +76,19 @@ func (m *MatchReader) read(i int) error {
 }
 
 func (m *MatchReader) Read() error {
+	var lastErr error
 	for i := range m.paths {
 		if err := m.read(i); err != nil {
-			return err
+			// A round that only hit an EOF-style error is still usable; keep
+			// reading the remaining rounds instead of aborting the whole
+			// match, which would leave later rounds unread and nil.
+			if !Ok(err) {
+				return err
+			}
+			lastErr = err
 		}
 	}
-	return nil
+	return lastErr
 }
 
 func (m *MatchReader) FirstRound() (r *Reader, err error) {
@@ -120,6 +127,9 @@ func (m *MatchReader) WriteExcel(out io.Writer) error {
 	c := newExcelCompass(f, "Match")
 
 	for i, r := range m.rounds {
+		if r == nil {
+			continue
+		}
 		sheet := fmt.Sprintf("Round %d", i+1)
 		_, err := f.NewSheet(sheet)
 		if err != nil {
@@ -287,6 +297,11 @@ func (m *MatchReader) Data() any {
 	}
 	rounds := make([]round, 0)
 	for _, r := range m.rounds {
+		// A round left nil by an incomplete/aborted replay is skipped rather
+		// than dereferenced.
+		if r == nil {
+			continue
+		}
 		rounds = append(rounds, round{
 			Header:        r.Header,
 			MatchFeedback: r.MatchFeedback,

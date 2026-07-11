@@ -135,7 +135,8 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 	stats := make([]PlayerRoundStats, 0)
 	index := make(map[string]int)
 	winningTeamIndex := 0
-	if r.Header.Teams[1].Won {
+	// A partially read round may not have both teams populated.
+	if len(r.Header.Teams) > 1 && r.Header.Teams[1].Won {
 		winningTeamIndex = 1
 	}
 	for i, p := range r.Header.Players {
@@ -236,6 +237,9 @@ func (m *MatchReader) PlayerStats() []PlayerMatchStats {
 	stats := make([]PlayerMatchStats, 0)
 	index := make(map[string]int)
 	for i, r := range m.rounds {
+		if r == nil {
+			continue
+		}
 		for _, p := range r.PlayerStats() {
 			if len(stats) == 0 || stats[index[p.Username]].Username != p.Username {
 				stats = append(stats, PlayerMatchStats{
