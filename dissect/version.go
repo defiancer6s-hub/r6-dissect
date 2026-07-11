@@ -29,4 +29,8 @@ const (
 	// Y11S2 alpha changed the in-record field fingerprints for the player
 	// DissectID and uiID (see readPlayer).
 	Y11S2 int = 9734089
+	// Y11S2A4 (alpha 4) reverted the DissectID and uiID field tags back to
+	// the classic values, so the alpha-3 special-casing must be scoped to
+	// [Y11S2, Y11S2A4) only.
+	Y11S2A4 int = 9751808
 )
