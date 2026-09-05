@@ -33,4 +33,7 @@ const (
 	// the classic values, so the alpha-3 special-casing must be scoped to
 	// [Y11S2, Y11S2A4) only.
 	Y11S2A4 int = 9751808
+	// Y11S3 Alpha 04 keeps the classic field tags; new defender operator
+	// (DefenderY11S3) added in the same build.
+	Y11S3A4 int = 9879602
 )

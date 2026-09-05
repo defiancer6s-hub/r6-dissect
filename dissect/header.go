@@ -211,6 +211,9 @@ const (
 	Rauora      Operator = 386098331923
 	Denari      Operator = 374667787937
 	SolidSnake  Operator = 444310693746
+	// Y11S3 Alpha 04 (codeVersion 9879602) new defender; official name not
+	// yet public, rename once known. Observed only on Defense teams.
+	DefenderY11S3 Operator = 456757346397
 )
 
 // duplicated code here could be avoided by defining a generic function accepting any Number type.
@@ -560,6 +563,9 @@ func (r *Reader) deriveTeamRoles() {
 			continue
 		}
 		role := p.Operator.Role()
+		if role != Attack && role != Defense {
+			continue // unknown operator; try another player
+		}
 		teamIndex := p.TeamIndex
 		oppositeTeamIndex := teamIndex ^ 1
 		if role == Attack {
